@@ -111,6 +111,13 @@
             font-weight: bold;
             margin-top: 2px;
         }
+        .text-minimal {
+            font-size: 11px;
+            color: #dc3545;
+            display: block;
+            font-weight: bold;
+            margin-top: 2px;
+        }
     </style>
 </head>
 <body>
@@ -153,14 +160,13 @@
 
 <script>
     const CONFIG = {
-        hematDaru: { pembagi: 3700, harga: 10000, minTarif: 10000 },
-        kargo1Daru: { pembagi: 4000, harga: 7000 },
+        hematDaru: { pembagi: 4000, harga: 10000, minTarif: 10000 },
         kargo2Daru: { pembagi: 1000000, harga: 1900000 },
         kargo1Miko: { pembagi: 4000, harga: 7000 },
         kargo2Miko: { pembagi: 1000000, harga: 1900000 },
         pelniDaru: { pembagiVol: 4000, harga: 20000, minTarif: 20000 },
         pelniMiko: { pembagiVol: 4000, harga: 20000, minTarif: 20000 },
-        pesawatDaru: { hargaPerGram: 77}
+        pesawatDaru: { hargaPerGram: 77000 }
     };
 
     const formatRupiah = (angka) => {
@@ -171,6 +177,20 @@
 
     const bulatkanKeAtasRibu = (nominal) => {
         return Math.ceil(nominal / 1000) * 1000;
+    };
+
+    // Logika pembulatan custom Kargo Daru (Aturan desimal 0.15 dan loncat 0.16 -> 0.2)
+    const hitungPembulatanKargoDaru = (val) => {
+        let duaDesimalTerdekat = Math.round(val * 100) / 100;
+        let lantaiSatuDesimal = Math.floor(duaDesimalTerdekat * 10) / 10;
+        let sisaDigitKeDua = parseFloat((duaDesimalTerdekat - lantaiSatuDesimal).toFixed(2));
+
+        if (lantaiSatuDesimal === 0.1 && sisaDigitKeDua > 0.05) {
+            return 0.2;
+        } else if (lantaiSatuDesimal > 0.1 && sisaDigitKeDua > 0.05) {
+            return parseFloat((lantaiSatuDesimal + 0.1).toFixed(1));
+        }
+        return duaDesimalTerdekat;
     };
 
     function bandingkanJasa() {
@@ -186,53 +206,65 @@
 
         const hasilBanding = [];
         const volM3Murni = (p * l * t) / 1000000;
+        
+        const volKargoDaruFinalCustom = hitungPembulatanKargoDaru(volM3Murni);
 
-        // --- 1. Hemat Daru (Batas Bawah 1kg = Flat Rp 10.000) ---
+        // --- 1. Hemat Daru (Kunci Tarif Rp 10.000 jika hasil <= 1 kg) ---
         const beratVolHematDaru = (p * l * t) / CONFIG.hematDaru.pembagi;
-        let totalHematDaru = 0;
-        let txtVolHematDaru = "";
-        let namaHematDaruFinal = "Hemat (Daru)";
-        let beratAcuanHemat = Math.max(b, beratVolHematDaru);
+        const beratAcuanAwal = Math.max(b, beratVolHematDaru);
+        
+        // Menambahkan toleransi penambahan berat tetap +0.5 kg sesuai struktur struk asli
+        let beratTagihanHemat = beratAcuanAwal + 0.5;
+        
+        // Penyesuaian presisi desimal spesifik agar pas dengan akhiran struk (.53 / .62 / .74)
+        if (Math.abs((beratTagihanHemat - Math.floor(beratTagihanHemat)) - 0.525) < 0.01) {
+            beratTagihanHemat = Math.floor(beratTagihanHemat) + 0.53;
+        } else {
+            beratTagihanHemat = parseFloat(beratTagihanHemat.toFixed(2));
+        }
 
+        let totalHematDaru = 0;
+        let namaHematDaruFinal = "Hemat (Daru)";
+
+        // KONDISI BARU: Jika berat tagihan akhir 1kg ke bawah, kunci biaya total ke Rp 10.000
+        if (beratTagihanHemat <= 1.0) {
+            totalHematDaru = CONFIG.hematDaru.minTarif;
+            namaHematDaruFinal += ' <span class="text-minimal">(Min. 1kg Kebawah)</span>';
+        } else {
+            totalHematDaru = Math.round(beratTagihanHemat * CONFIG.hematDaru.harga);
+        }
+        
         if (b <= beratVolHematDaru) {
             namaHematDaruFinal += ' <span class="text-penalti">(Vol Lebih Besar)</span>';
-            txtVolHematDaru = `${beratVolHematDaru.toFixed(2)} kg`;
         } else {
             namaHematDaruFinal += ' <span class="text-info-opsi">(Berat Aktual)</span>';
-            txtVolHematDaru = `${b.toFixed(2)} kg`;
         }
-
-        if (beratAcuanHemat < 1) {
-            totalHematDaru = CONFIG.hematDaru.minTarif;
-            namaHematDaruFinal += ' <span class="text-minimal">(Min. di bawah 1kg)</span>';
-        } else {
-            totalHematDaru = bulatkanKeAtasRibu(beratAcuanHemat * CONFIG.hematDaru.harga);
-        }
+        
+        let txtVolHematDaru = `${beratTagihanHemat.toFixed(2)} kg`;
         hasilBanding.push({ nama: namaHematDaruFinal, volumeText: txtVolHematDaru, total: totalHematDaru });
 
-        // --- 2. Kargo Daru (Filter Patokan Global >= 0.01632 m³) ---
-        if (volM3Murni >= 0.01632) {
-            const beratVolKargo1DaruMurni = (p * l * t) / CONFIG.kargo1Daru.pembagi;
+        // --- 2. Kargo Daru ---
+        let totalKargoDaruFinal = 0;
+        let namaKargoDaruFinal = "Kargo (Daru)";
+        let txtVolKargoDaruFinal = "";
+        let pushKargoDaru = false;
 
-            if (b >= 5 || beratVolKargo1DaruMurni >= 5) {
-                const totalKargo1Daru = bulatkanKeAtasRibu(beratVolKargo1DaruMurni * CONFIG.kargo1Daru.harga);
-                const totalKargo2Daru = bulatkanKeAtasRibu(volM3Murni * CONFIG.kargo2Daru.harga);
-
-                let totalKargoDaruFinal = 0;
-                let namaKargoDaruFinal = "Kargo (Daru)";
-                let txtVolKargoDaruFinal = "";
-
-                if (totalKargo1Daru >= totalKargo2Daru) {
-                    totalKargoDaruFinal = totalKargo1Daru;
-                    txtVolKargoDaruFinal = `${beratVolKargo1DaruMurni.toFixed(2)} kg`;
-                    namaKargoDaruFinal += ' <span class="text-info-opsi">(Skema Kargo 1 - Vol kg)</span>';
-                } else {
-                    totalKargoDaruFinal = totalKargo2Daru;
-                    txtVolKargoDaruFinal = `${volM3Murni.toFixed(4)} m³`;
-                    namaKargoDaruFinal += ' <span class="text-info-opsi">(Skema Kargo 2 - m³)</span>';
-                }
-                hasilBanding.push({ nama: namaKargoDaruFinal, volumeText: txtVolKargoDaruFinal, total: totalKargoDaruFinal });
+        if (volM3Murni < 0.02) {
+            totalKargoDaruFinal = 25000;
+            txtVolKargoDaruFinal = `${volKargoDaruFinalCustom.toFixed(2)} m³`;
+            namaKargoDaruFinal += ' <span class="text-minimal">(di bawah volume)</span>';
+            pushKargoDaru = true;
+        } else {
+            if (b >= 5 || volM3Murni >= 0.02) { 
+                totalKargoDaruFinal = bulatkanKeAtasRibu(volKargoDaruFinalCustom * CONFIG.kargo2Daru.harga);
+                txtVolKargoDaruFinal = `${volKargoDaruFinalCustom.toFixed(2)} m³`;
+                namaKargoDaruFinal += ' <span class="text-info-opsi">(Skema m³)</span>';
+                pushKargoDaru = true;
             }
+        }
+
+        if (pushKargoDaru) {
+            hasilBanding.push({ nama: namaKargoDaruFinal, volumeText: txtVolKargoDaruFinal, total: totalKargoDaruFinal });
         }
 
         // --- 3. Kargo Miko ---
@@ -304,7 +336,7 @@
         }
         hasilBanding.push({ nama: namaPelniMikoFinal, volumeText: txtVolPelniMiko, total: totalPelniMiko });
 
-        // --- 6. Pesawat Daru (Murni Aktual Gram) ---
+        // --- 6. Pesawat Daru ---
         const beratDalamGram = b * 1000; 
         const totalPesawatDaru = bulatkanKeAtasRibu(beratDalamGram * CONFIG.pesawatDaru.hargaPerGram);
         const txtVolPesawatDaru = `${beratDalamGram.toLocaleString('id-ID')} gram`;
