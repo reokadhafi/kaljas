@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Perbandingan Biaya Jasa Kirim</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 580px;
+        }
+        h2 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        .subtitle {
+            text-align: center;
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 25px;
+        }
+        .form-group {
+            margin-bottom: 18px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+        input {
+            width: 100%;
+            padding: 11px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+        input:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+        .dimensi-fields {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+        button.btn-hitung {
+            width: 100%;
+            padding: 12px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+            margin-top: 10px;
+        }
+        button.btn-hitung:hover {
+            background-color: #0056b3;
+        }
+        /* Style Tabel Perbandingan */
+        .compare-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        .compare-table th, .compare-table td {
+            border: 1px solid #ddd;
+            padding: 12px 10px;
+            text-align: left;
+            font-size: 13px;
+        }
+        .compare-table th {
+            background-color: #f8f9fa;
+            color: #333;
+            font-weight: 600;
+        }
+        .compare-table tbody tr {
+            background-color: #ffffff;
+        }
+        .text-info-opsi {
+            font-size: 11px;
+            color: #666;
+            display: block;
+            font-weight: normal;
+            margin-top: 2px;
+        }
+        .text-penalti {
+            font-size: 11px;
+            color: #fd7e14;
+            display: block;
+            font-weight: bold;
+            margin-top: 2px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Kalkulator Banding Jasa Kirim</h2>
+    <p class="subtitle">Masukkan data paket untuk membandingkan semua biaya layanan sekaligus.</p>
+    
+    <div class="form-group">
+        <label>Dimensi Paket (Centimeter)</label>
+        <div class="dimensi-fields">
+            <input type="number" id="p_comp" placeholder="P (cm)" min="0">
+            <input type="number" id="l_comp" placeholder="L (cm)" min="0">
+            <input type="number" id="t_comp" placeholder="T (cm)" min="0">
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label for="b_comp">Berat Aktual Paket (kg)</label>
+        <input type="number" id="b_comp" placeholder="Masukkan berat asli paket" min="0">
+    </div>
+
+    <button class="btn-hitung" onclick="bandingkanJasa()">Bandingkan Semua Jasa</button>
+
+    <div id="hasil-compare" style="display:none; margin-top: 25px;">
+        <h4 style="margin-bottom: 10px; color: #333; font-size: 15px;">Hasil Analisis (Termurah -> Termahal):</h4>
+        <table class="compare-table">
+            <thead>
+                <tr>
+                    <th>Nama Jasa</th>
+                    <th>Volume / Satuan</th>
+                    <th>Total Biaya</th>
+                </tr>
+            </thead>
+            <tbody id="compare-tbody">
+                </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    const CONFIG = {
+        hematDaru: { pembagi: 3700, harga: 10000, minTarif: 10000 },
+        kargo1Daru: { pembagi: 4000, harga: 7000 },
+        kargo2Daru: { pembagi: 1000000, harga: 1900000 },
+        kargo1Miko: { pembagi: 4000, harga: 7000 },
+        kargo2Miko: { pembagi: 1000000, harga: 1900000 },
+        pelniDaru: { pembagiVol: 4000, harga: 20000, minTarif: 20000 },
+        pelniMiko: { pembagiVol: 4000, harga: 20000, minTarif: 20000 },
+        pesawatDaru: { hargaPerGram: 77}
+    };
+
+    const formatRupiah = (angka) => {
+        return new Intl.NumberFormat('id-ID', {
+            style: 'currency', currency: 'IDR', minimumFractionDigits: 0
+        }).format(angka);
+    };
+
+    const bulatkanKeAtasRibu = (nominal) => {
+        return Math.ceil(nominal / 1000) * 1000;
+    };
+
+    function bandingkanJasa() {
+        const p = parseFloat(document.getElementById('p_comp').value) || 0;
+        const l = parseFloat(document.getElementById('l_comp').value) || 0;
+        const t = parseFloat(document.getElementById('t_comp').value) || 0;
+        const b = parseFloat(document.getElementById('b_comp').value) || 0;
+
+        if (p <= 0 || l <= 0 || t <= 0 || b <= 0) {
+            alert("Silakan isi semua kolom Dimensi (P, L, T) DAN Berat Aktual dengan benar.");
+            return;
+        }
+
+        const hasilBanding = [];
+        const volM3Murni = (p * l * t) / 1000000;
+
+        // --- 1. Hemat Daru (Batas Bawah 1kg = Flat Rp 10.000) ---
+        const beratVolHematDaru = (p * l * t) / CONFIG.hematDaru.pembagi;
+        let totalHematDaru = 0;
+        let txtVolHematDaru = "";
+        let namaHematDaruFinal = "Hemat (Daru)";
+        let beratAcuanHemat = Math.max(b, beratVolHematDaru);
+
+        if (b <= beratVolHematDaru) {
+            namaHematDaruFinal += ' <span class="text-penalti">(Vol Lebih Besar)</span>';
+            txtVolHematDaru = `${beratVolHematDaru.toFixed(2)} kg`;
+        } else {
+            namaHematDaruFinal += ' <span class="text-info-opsi">(Berat Aktual)</span>';
+            txtVolHematDaru = `${b.toFixed(2)} kg`;
+        }
+
+        if (beratAcuanHemat < 1) {
+            totalHematDaru = CONFIG.hematDaru.minTarif;
+            namaHematDaruFinal += ' <span class="text-minimal">(Min. di bawah 1kg)</span>';
+        } else {
+            totalHematDaru = bulatkanKeAtasRibu(beratAcuanHemat * CONFIG.hematDaru.harga);
+        }
+        hasilBanding.push({ nama: namaHematDaruFinal, volumeText: txtVolHematDaru, total: totalHematDaru });
+
+        // --- 2. Kargo Daru (Filter Patokan Global >= 0.01632 m³) ---
+        if (volM3Murni >= 0.01632) {
+            const beratVolKargo1DaruMurni = (p * l * t) / CONFIG.kargo1Daru.pembagi;
+
+            if (b >= 5 || beratVolKargo1DaruMurni >= 5) {
+                const totalKargo1Daru = bulatkanKeAtasRibu(beratVolKargo1DaruMurni * CONFIG.kargo1Daru.harga);
+                const totalKargo2Daru = bulatkanKeAtasRibu(volM3Murni * CONFIG.kargo2Daru.harga);
+
+                let totalKargoDaruFinal = 0;
+                let namaKargoDaruFinal = "Kargo (Daru)";
+                let txtVolKargoDaruFinal = "";
+
+                if (totalKargo1Daru >= totalKargo2Daru) {
+                    totalKargoDaruFinal = totalKargo1Daru;
+                    txtVolKargoDaruFinal = `${beratVolKargo1DaruMurni.toFixed(2)} kg`;
+                    namaKargoDaruFinal += ' <span class="text-info-opsi">(Skema Kargo 1 - Vol kg)</span>';
+                } else {
+                    totalKargoDaruFinal = totalKargo2Daru;
+                    txtVolKargoDaruFinal = `${volM3Murni.toFixed(4)} m³`;
+                    namaKargoDaruFinal += ' <span class="text-info-opsi">(Skema Kargo 2 - m³)</span>';
+                }
+                hasilBanding.push({ nama: namaKargoDaruFinal, volumeText: txtVolKargoDaruFinal, total: totalKargoDaruFinal });
+            }
+        }
+
+        // --- 3. Kargo Miko ---
+        const beratVolKargo1MikoMurni = (p * l * t) / CONFIG.kargo1Miko.pembagi; 
+
+        if (beratVolKargo1MikoMurni >= 5) {
+            const totalKargo1Miko = bulatkanKeAtasRibu(beratVolKargo1MikoMurni * CONFIG.kargo1Miko.harga);
+            const totalKargo2Miko = bulatkanKeAtasRibu(volM3Murni * CONFIG.kargo2Miko.harga);
+
+            let totalKargoMikoFinal = 0;
+            let namaKargoMikoFinal = "Kargo (Miko)";
+            let txtVolKargoMikoFinal = "";
+
+            if (totalKargo1Miko >= totalKargo2Miko) {
+                totalKargoMikoFinal = totalKargo1Miko;
+                txtVolKargoMikoFinal = `${beratVolKargo1MikoMurni.toFixed(2)} kg`;
+                namaKargoMikoFinal += ' <span class="text-info-opsi">(Skema Kargo 1 - Vol kg)</span>';
+            } else {
+                totalKargoMikoFinal = totalKargo2Miko;
+                txtVolKargoMikoFinal = `${volM3Murni.toFixed(4)} m³`;
+                namaKargoMikoFinal += ' <span class="text-info-opsi">(Skema Kargo 2 - m³)</span>';
+            }
+            hasilBanding.push({ nama: namaKargoMikoFinal, volumeText: txtVolKargoMikoFinal, total: totalKargoMikoFinal });
+        }
+
+        // --- 4. Pelni Daru (Batas Bawah 1kg = Flat Rp 20.000) ---
+        const beratVolPelniDaru = (p * l * t) / CONFIG.pelniDaru.pembagiVol;
+        let totalPelniDaru = 0;
+        let namaPelniDaruFinal = "Pelni (Daru)";
+        let txtVolPelniDaru = "";
+        let beratAcuanPelniDaru = Math.max(b, beratVolPelniDaru);
+
+        if (b <= beratVolPelniDaru) {
+            namaPelniDaruFinal += ' <span class="text-penalti">(Pelni Penalti)</span>';
+            txtVolPelniDaru = `${beratVolPelniDaru.toFixed(2)} kg`;
+        } else {
+            namaPelniDaruFinal += ' <span class="text-info-opsi">(Pelni Ori)</span>';
+            txtVolPelniDaru = `${b.toFixed(2)} kg`;
+        }
+
+        if (beratAcuanPelniDaru < 1) {
+            totalPelniDaru = CONFIG.pelniDaru.minTarif;
+            namaPelniDaruFinal += ' <span class="text-minimal">(Min. di bawah 1kg)</span>';
+        } else {
+            totalPelniDaru = bulatkanKeAtasRibu(beratAcuanPelniDaru * CONFIG.pelniDaru.harga);
+        }
+        hasilBanding.push({ nama: namaPelniDaruFinal, volumeText: txtVolPelniDaru, total: totalPelniDaru });
+
+        // --- 5. Pelni Miko (Batas Bawah 1kg = Flat Rp 20.000) ---
+        const beratVolPelniMiko = (p * l * t) / CONFIG.pelniMiko.pembagiVol;
+        let totalPelniMiko = 0;
+        let namaPelniMikoFinal = "Pelni (Miko)";
+        let txtVolPelniMiko = "";
+        let beratAcuanPelniMiko = Math.max(b, beratVolPelniMiko);
+
+        if (b <= beratVolPelniMiko) {
+            namaPelniMikoFinal += ' <span class="text-penalti">(Pelni Penalti)</span>';
+            txtVolPelniMiko = `${beratVolPelniMiko.toFixed(2)} kg`;
+        } else {
+            namaPelniMikoFinal += ' <span class="text-info-opsi">(Pelni Ori)</span>';
+            txtVolPelniMiko = `${b.toFixed(2)} kg`;
+        }
+
+        if (beratAcuanPelniMiko < 1) {
+            totalPelniMiko = CONFIG.pelniMiko.minTarif;
+            namaPelniMikoFinal += ' <span class="text-minimal">(Min. di bawah 1kg)</span>';
+        } else {
+            totalPelniMiko = bulatkanKeAtasRibu(beratAcuanPelniMiko * CONFIG.pelniMiko.harga);
+        }
+        hasilBanding.push({ nama: namaPelniMikoFinal, volumeText: txtVolPelniMiko, total: totalPelniMiko });
+
+        // --- 6. Pesawat Daru (Murni Aktual Gram) ---
+        const beratDalamGram = b * 1000; 
+        const totalPesawatDaru = bulatkanKeAtasRibu(beratDalamGram * CONFIG.pesawatDaru.hargaPerGram);
+        const txtVolPesawatDaru = `${beratDalamGram.toLocaleString('id-ID')} gram`;
+        const namaPesawatDaruFinal = 'Pesawat (Daru) <span class="text-info-opsi">(Murni Aktual Gram)</span>';
+        hasilBanding.push({ nama: namaPesawatDaruFinal, volumeText: txtVolPesawatDaru, total: totalPesawatDaru });
+
+        // --- Proses Sorting Akhir ---
+        hasilBanding.sort((a, b) => a.total - b.total);
+
+        // Render Data ke Tabel
+        const tbody = document.getElementById('compare-tbody');
+        tbody.innerHTML = ""; 
+
+        hasilBanding.forEach((jasa) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>
+                    <div style="display: flex; flex-direction: column;">
+                        <span>${jasa.nama}</span>
+                    </div>
+                </td>
+                <td>${jasa.volumeText}</td>
+                <td>${formatRupiah(jasa.total)}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('hasil-compare').style.display = 'block';
+    }
+</script>
+
+</body>
+</html>
